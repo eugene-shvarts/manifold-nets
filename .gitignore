@@ -1,0 +1,2 @@
+# ignore Julia lock files
+Manifest.toml
