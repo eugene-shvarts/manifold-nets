@@ -1,2 +1,5 @@
 # ignore Julia lock files
 Manifest.toml
+
+# ignore data that's too big
+data/text_features.h5
