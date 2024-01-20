@@ -1,5 +1,8 @@
 # ignore Julia lock files
 Manifest.toml
 
+# ignore Jupyter Notebook checkpoints
+.ipynb_checkpoints
+
 # ignore data that's too big
 data/text_features.h5

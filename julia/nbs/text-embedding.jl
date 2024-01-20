@@ -13,6 +13,12 @@ end
 # ╔═╡ c7e21c47-92da-4481-916f-12580a5d0a93
 using HDF5, Chain, DataFrames, DataStructures, Plots, LinearAlgebra, StatsBase, SparseArrays, Unzip, Distances
 
+# ╔═╡ e81c4095-4eb9-4242-b1d7-8330e52f61b2
+using Arpack, NearestNeighbors
+
+# ╔═╡ 91d80104-c9ce-4dcc-9fda-5f9819f2a67b
+using Graphs
+
 # ╔═╡ c80f6710-fbbc-4af7-b3d2-2f29f7826b5f
 tf = h5read("../../data/text_features.h5", "text_features")
 
@@ -90,31 +96,63 @@ sort(collect(countmap(x for v in tops for x in v)), by=x -> -x[2])
 plot(sort(collect(values(countmap(x for v in tops for x in v))), rev=true), yscale=:log10)
 
 # ╔═╡ 16bb9506-365a-40d0-baf6-fac4a24af1d2
-function thresh_distmat(X, σ = 1, k = 1)
-	t = σ*k
+function thresh_chunk_lapweights(X, σ = 1, ϵ=0.1; n = 10)
+	t = σ*log(1/ϵ)
 	entries = Tuple{Int, Int, Float64}[]
-
-	for (i,u) in enumerate(eachcol(X))
-		for (j,v) in enumerate(eachcol(X[:,(i+1):end]))
-			d = sum((u-v).^2)
-			if d < t
-				push!(entries, (i,i+j, exp(-d/σ)))
+	metric = SqEuclidean()
+	nvec = size(X, 2)
+	Δ = nvec//n
+	
+	for i = 1:n
+		dim, di = floor(Int, Δ*(i-1)), floor(Int, Δ*i)
+		for j = i:n
+			djm, dj = floor(Int, Δ*(j-1)), floor(Int, Δ*j)
+			D = pairwise(metric, X[:,dim+1:di], X[:,djm+1:dj], dims=2)
+			for i=1:size(D, 1), j=1:size(D,2)
+				d = D[i,j]
+				dix, djx = dim+i, djm+j
+				if d < t && dix < djx
+					push!(entries, (dix, djx, exp(-d/σ)))
+				end
 			end
 		end
 	end
-
-	sparse(unzip(entries)...)
+	sparse(unzip(entries)..., nvec, nvec)
 end
 
-# ╔═╡ 7d963a26-91a3-49ac-8602-10830d6a4a4c
-# W = thresh_distmat(tfcolnorm[:,1:20_000], 0.2, 0.5)
+# ╔═╡ e950b572-c24b-4aff-8f64-37f773eb27ee
+kdtree = KDTree(tfcolnorm; leafsize=10)
 
-# ╔═╡ 062db28f-05e5-4b3b-bfbc-4a7dce8df15b
-pairwise(SqEuclidean(), tfcolnorm[:,1:20_000], dims=2)
+# ╔═╡ 8bc00a75-64b6-4e0e-b638-fccafa3000b6
+nbhrs = knn(kdtree, tfcolnorm, 6)
+
+# ╔═╡ 613a6149-a596-480b-8a32-e6dcead1978f
+
+
+# ╔═╡ 7d963a26-91a3-49ac-8602-10830d6a4a4c
+W = thresh_chunk_lapweights(tfcolnorm, 0.25, 0.78; n=10)
+
+# ╔═╡ 83116cbb-f861-46b4-b438-d75f6db3caaf
+sum(W*ones(size(W, 2)) .== 0)
+
+# ╔═╡ f19d1a0b-80a5-4fae-9f4b-bc468c8da521
+Leig(W) = @chain W begin
+	Symmetric
+	Diagonal(_*ones(size(_, 2))) - _
+	eigs(nev=1, which=:SM)
+end
+
+# ╔═╡ 07fde38d-cbdc-4293-8866-ddbfc3003ce6
+# Leig(W)
+
+# ╔═╡ 4c02af70-ad70-46c9-ad05-33cc521ee48f
+
 
 # ╔═╡ Cell order:
 # ╠═6cf50f8a-ab5b-11ee-3ab1-31e32a50824a
 # ╠═c7e21c47-92da-4481-916f-12580a5d0a93
+# ╠═e81c4095-4eb9-4242-b1d7-8330e52f61b2
+# ╠═91d80104-c9ce-4dcc-9fda-5f9819f2a67b
 # ╠═c80f6710-fbbc-4af7-b3d2-2f29f7826b5f
 # ╠═d288688b-23fc-4342-97d8-cd0a45f43c7a
 # ╠═580f8d59-699d-490e-8ce0-bb05fadd4c5c
@@ -135,5 +173,11 @@ pairwise(SqEuclidean(), tfcolnorm[:,1:20_000], dims=2)
 # ╠═7876cd6f-b898-4140-90ac-934fabd13f03
 # ╠═6598bd30-fd68-456c-8177-77c587854f91
 # ╠═16bb9506-365a-40d0-baf6-fac4a24af1d2
+# ╠═e950b572-c24b-4aff-8f64-37f773eb27ee
+# ╠═8bc00a75-64b6-4e0e-b638-fccafa3000b6
+# ╠═613a6149-a596-480b-8a32-e6dcead1978f
 # ╠═7d963a26-91a3-49ac-8602-10830d6a4a4c
-# ╠═062db28f-05e5-4b3b-bfbc-4a7dce8df15b
+# ╠═83116cbb-f861-46b4-b438-d75f6db3caaf
+# ╠═f19d1a0b-80a5-4fae-9f4b-bc468c8da521
+# ╠═07fde38d-cbdc-4293-8866-ddbfc3003ce6
+# ╠═4c02af70-ad70-46c9-ad05-33cc521ee48f
